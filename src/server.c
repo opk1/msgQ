@@ -33,9 +33,9 @@ void server()
     FILE *fp;
     
     /* shared memory to keep track of how many clients are connected */
-    int *clients = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    clientInfo *cInfo = mmap(NULL, sizeof(clientInfo), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     msg *message = (msg *)malloc(sizeof(msg));
-	
+    
     if((qid = open_queue(MSGKEY)) == -1)
     {
 	perror("opening queue");
@@ -54,9 +54,10 @@ void server()
 		perror("fork call");
 		exit(1);
 	    case 0:
-	        /* increment number of clients */
-	        *clients =  *clients + 1;
-		printf("%d clients connected\n", *clients);
+	        /* increment number of clients and total priority */
+		cInfo->priority = cInfo->priority + message->priority;
+	        cInfo->clients =  cInfo->clients + 1;
+		printf("%d clients connected\n", cInfo->clients);
 	    
 		fp = open_file(message->buffer);
 		
@@ -64,20 +65,25 @@ void server()
 
 		/* set status to notify more data to send */
 		message->status = 1;
-		while(fread(message->buffer, sizeof(char), MAXMESSAGEDATA, fp))
+		while(fread(message->buffer, sizeof(char), (MAXMESSAGEDATA - ((MAXMESSAGEDATA * ((cInfo->clients - 1) * (message->priority/(cInfo->priority * cInfo->clients)))))), fp))
 		{
 		    send_message(qid, message);
 		    memset(message->buffer, 0, sizeof(message->buffer));
-		    /* sleep depending on number of clients connected and priority */
-		    usleep(message->priority * *clients * 100);
 		}
 		/* set status for no more data to send */
 		message->status = 0;
 		send_message(qid, message);
 		printf("Client %d compete with priority %d\n", message->pid, message->priority);
 		/* decrement number of clients */
-		*clients = *clients - 1;
+		cInfo->clients = cInfo->clients - 1;
 		fclose(fp);
+		/* if no clients connected close message queue */
+		if(cInfo->clients == 0)
+		{
+		    sleep(1);
+		    remove_queue(qid);
+		    munmap((void *)cInfo, sizeof(clientInfo));
+		}
 		exit(1);
 	    default:
 		    break;
