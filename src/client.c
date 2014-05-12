@@ -82,7 +82,7 @@ void * client_thread(void *param)
     
     while(1)
     {
-	   if(read_message(qid, pid, message) >= 0)
+	if(read_message(qid, pid, message) >= 0)
 	{
 	    /* check status if there is more data to read */
 	    if(message->status)
